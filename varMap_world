@@ -1,0 +1,105 @@
+
+#### Packages ####
+library("rio") # for read variable data (suitable filetype includes .xlsx,.sav,.csv and so on) 
+library("ggplot2") #for drawing polygon, filling color and adding label
+library("cowplot") #for saving plot
+library("rgdal") # for read map data(to contruct polygons)
+library("dplyr") # for combining dataframes 
+library("data.table") 
+
+
+#### Input mapData ####
+    fname <- "MapData/World_dls/World.shp" #this map data is downloaded from http://www.resdc.cn/data.aspx?DATAID=205
+    bou=rgdal::readOGR(fname)
+    bou@data$id = as.character(bou@data$ELEMID)
+    map.data <- dplyr::full_join(ggplot2::fortify(bou), bou@data, by = "id")  #After fortify(bou) we can get a dataframe object which contains a colum named "id" that has the same value as "ELEMID"
+
+####Input variableData and locationData ####
+
+    VarLocData <- rio::import("MapData/VarLocData/varData.xlsx")
+    VarLocData_num <- rio::import("MapData/VarLocData/varData_num.xlsx") #the areas that use number label
+    
+#### Merge data ####
+    mapdata=dplyr::full_join(map.data, VarLocData, by="SOC") #Merge variable data to map data
+
+    
+#### Draw map #####
+#theme 
+legend.postion = c(0.5,0.06)  #percentage of the plot
+    
+#border of maps
+bordercolor <- "white" #it is important to keep the boudercolor and the background color the same.(because the boundary of coastline is too detailed)
+bordersize <- 0.0002
+
+#guide_colorbar parameter 
+    guidetitle= "ABC"
+
+guidetitle.position = "top"
+
+#variable
+    var = "ABC"
+
+#scale_fill_distiller parameter
+    colors = "Blues"
+    #colors = "Reds"
+direc = 1  #-1 is reverse
+na.color = "grey90"  #color for missing area
+    guidelimits = range(mapdata$Personal_v, na.rm=TRUE) #this parameter control the actual range of color
+guidelabels = c("Low","High")
+guidelabeltheme <- element_text(size=5, color="black")
+
+#loc label parameter
+loc.label = "loclabel"
+loc.label_num = "loclabel"
+
+#xlim, ylim
+maplat = c(-58,80)
+maplong = c(-180,180)
+
+#output parameter
+dpi = 300
+
+
+maptheme <- theme_void()+ theme(legend.position = legend.postion ,legend.title=element_text(size=5, color="black"))
+
+mapguide<- guide_colorbar(title="", title.position=guidetitle.position, title.hjust=0.5,
+                        direction="horizontal", 
+                        label.position = "bottom",label.theme = guidelabeltheme,
+                        ticks=FALSE,
+                        barwidth=unit(2,"cm"), barheight=unit(1.5,"mm")) 
+
+arealabel <- geom_text(data = VarLocData, aes(x=geoE, y=geoN, label= get(loc.label)),size = 1.2)  #3-letter code label of the areas
+arealabel_num <- geom_text(data = VarLocData_num, aes(x=geoE, y=geoN, label= get(loc.label_num)),size = 1.2, nudge_x = 1, nudge_y = -1,fontface = "bold") #some areas are too small so their labels are an Arabic number
+
+#these are the guide of the number label(how the numbers match with the area names)
+#for example 
+#1 BGR
+#2 CYP
+garealabel_num <- geom_text(data = VarLocData_num, aes(x=guideX, y=guideY, label= get(loc.label_num)),size = 1.2) 
+garealabel_num_1 <- geom_text(data = VarLocData_num, aes(x=guideX, y=guideY, label= get("3lcode")),size = 1.2, nudge_x = 7)
+
+                       
+map <- ggplot()+maptheme + geom_polygon(data = mapdata, aes(x=long, y=lat, group=group, fill = get(var)), color = bordercolor, size=bordersize) 
+          
+map<- map + scale_fill_distiller(palette=colors, 
+                                  direction=direc, 
+                                  na.value=na.color,
+                                  limits = guidelimits,
+                                  breaks = guidebreaks,
+                                  label = guidelabels,
+                                  guide=mapguide) + arealabel+arealabel_num + annotate("text", x=0, y=-51.5, size=2, label = guidetitle) + 
+                                  garealabel_num + garealabel_num_1
+                                 
+
+
+##### projection ####
+#xlim=map.long, ylim=map.lat
+map =map + coord_cartesian(ylim=maplat, xlim=maplong)  #the map looks good with the cartersian coordinate system, so we did not use any other recomended projection method. 
+
+
+#### Output ####
+    filename <- "OutputMap/ABC.png"
+cowplot::save_plot(filename,base_width=6.3, base_height = 2.8, dpi=dpi,
+          plot=ggdraw() + draw_plot(map) )
+
+
